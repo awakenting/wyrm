@@ -53,7 +53,7 @@ from wyrm.types import Data
 # ############# OLD FUNCTIONS ############################################
 
 
-def plot_channels(dat, ncols=8, chanaxis=-1, otheraxis=-2):
+def plot_channels(dat, figsize=(12,12), ncols=8, chanaxis=-1, otheraxis=-2):
     """Plot all channels for a continuous or epo.
 
     In case of an epoched Data object, the classwise average is
@@ -76,7 +76,7 @@ def plot_channels(dat, ncols=8, chanaxis=-1, otheraxis=-2):
     ax = []
     n_channels = dat.data.shape[chanaxis]
     nrows = int(np.ceil(n_channels / ncols))
-    f, ax = plt.subplots(nrows=nrows, ncols=ncols, sharex=True, sharey=True);
+    f, ax = plt.subplots(nrows=nrows, ncols=ncols, squeeze=False, sharex=True, sharey=True, figsize=figsize);
     for i, chan in enumerate(dat.axes[chanaxis]):
         a = ax[i // ncols, i % ncols]
         dat.axes[otheraxis], dat.data.take([i], chanaxis)
@@ -345,7 +345,7 @@ def plot_tenten(data, highlights=None, hcolors=None, legend=False, scale=True,
     # add another axes to the first row for the scale
     columns[0] += 1
 
-    plt.figure()
+    fig = plt.figure()
     grid = calc_centered_grid(columns, hpad=.01, vpad=.01)
 
     # axis used for sharing axes between channels
@@ -382,7 +382,7 @@ def plot_tenten(data, highlights=None, hcolors=None, legend=False, scale=True,
 
     # plot the scale axes
     xtext = dcopy.axes[0][len(dcopy.axes[0])-1]
-    sc = _subplot_scale(str(xtext) + ' ms', "$\mu$V", position=grid[scale_ax])
+    sc = _subplot_scale(fig, str(xtext) + ' ms', "$\mu$V", position=grid[scale_ax])
 
     return ax, sc
 
@@ -782,7 +782,7 @@ def _subplot_r_square(data, position):
     return ax
 
 
-def _subplot_scale(xvalue, yvalue, position):
+def _subplot_scale(figure, xvalue, yvalue, position):
     """Creates a new axes with a simple scale.
 
     Parameters
@@ -798,15 +798,15 @@ def _subplot_scale(xvalue, yvalue, position):
     -------
     matplotlib.axes.Axes
     """
-    fig = plt.gcf()
-    ax = fig.add_axes(position)
-    for item in [fig, ax]:
-        item.patch.set_visible(False)
+    ax = figure.add_axes(position)
+    #for item in [figure, ax]:
+    #    item.patch.set_visible(False)
+    ax.patch.set_visible(False)
     ax.axis('off')
     ax.add_patch(Rectangle((1, 1), 3, .2, color='black'))
     ax.add_patch(Rectangle((1, 1), .1, 2, color='black'))
-    plt.text(1.5, 2, yvalue)
-    plt.text(1.5, .25, xvalue)
+    ax.text(1.5, 2, yvalue)
+    ax.text(1.5, .25, xvalue)
     ax.set_ylim([0, 4])
     ax.set_xlim([0, 5])
     return ax
