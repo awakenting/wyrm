@@ -126,7 +126,7 @@ def load_brain_vision_data(vhdr):
     with open(vhdr) as fh:
         fdata = map(str.strip, fh.readlines())
     fdata = filter(lambda x: not x.startswith(';'), fdata)
-    fdata = filter(lambda x: len(x) > 0, fdata)
+    fdata = list(filter(lambda x: len(x) > 0, fdata))
     # check for the correct file version:
     assert fdata[0].endswith('1.0')
     # read all data into a dict where the key is the stanza of the file
@@ -151,9 +151,9 @@ def load_brain_vision_data(vhdr):
     sampling_interval_microseconds = float(file_dict['Common Infos']['SamplingInterval'])
     fs = 1 / (sampling_interval_microseconds / 10**6)
     channels = [file_dict['Channel Infos']['Ch%i' % (i + 1)] for i in range(n_channels)]
-    channels = map(lambda x: x.split(',')[0], channels)
+    channels = list(map(lambda x: x.split(',')[0], channels))
     resolutions = [file_dict['Channel Infos']['Ch%i' % (i + 1)] for i in range(n_channels)]
-    resolutions = map(lambda x: float(x.split(',')[2]), resolutions)
+    resolutions = list(map(lambda x: float(x.split(',')[2]), resolutions))
     # assert all channels have the same resolution of 0.1
     # FIXME: that is not always true, for example if we measure pulse or
     # emg
@@ -161,12 +161,17 @@ def load_brain_vision_data(vhdr):
     # some assumptions about the data...
     assert file_dict['Common Infos']['DataFormat'] == 'BINARY'
     assert file_dict['Common Infos']['DataOrientation'] == 'MULTIPLEXED'
-    assert file_dict['Binary Infos']['BinaryFormat'] == 'INT_16'
+    #assert file_dict['Binary Infos']['BinaryFormat'] == 'INT_16'
     # load EEG data
     logger.debug('Loading EEG Data.')
-    data = np.fromfile(data_f, np.int16)
+    #TODO: make binary_to_numpy_format dict as complete as possible
+    binary_data_format = file_dict['Binary Infos']['BinaryFormat']
+    binary_to_numpy_format = {'INT_16':np.int16,'INT_32':np.int32}
+    dataformat = binary_to_numpy_format[binary_data_format]
+
+    data = np.fromfile(data_f, dataformat)
     data = data.reshape(-1, n_channels)
-    data *= resolutions[0]
+    data = data*resolutions[0]
     n_samples = data.shape[0]
     # duration in ms
     duration = 1000 * n_samples / fs
