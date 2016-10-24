@@ -646,6 +646,96 @@ def segment_dat(dat, marker_def, ival, newsamples=None, timeaxis=-2):
     units.insert(0, '#')
     return dat.copy(data=data, axes=axes, names=names, units=units, class_names=class_names)
 
+def segment_dat_into_blocks(dat, nblocks, ival_len, timeaxis=-2):
+    """Convert a continuous data object to an blocks.
+
+    Given a continuous data object, a number of blocks, and an
+    interval, this method divides the dat between the first and the
+    last marker into ``nblocks`` blocks of equal length. Each block is
+    further segmented back-to-back into intervals of length ``ival_len``
+    ms along the ``timeaxis``. The returned ``dat`` object stores those
+    intervals and the block each interval belongs to in the same way
+    as epochs are assigned to a class (see :func:`segment_dat`).
+
+    Segments that are too close to the borders and thus too short are
+    ignored.
+
+    Parameters
+    ----------
+    dat : Data
+        the data object to be segmented
+    nblocks : int
+        The number of blocks you want the data to be divided into.
+    ival_len : int
+        The length of the intervals in each block in milliseconds.
+        With ``ival_len=300`` a 10s long block and would thus be
+        divided into 33 intervals (``300*33 = 9900ms``).
+    timeaxis : int, optional
+        the axis along which the segmentation will take place
+
+    Returns
+    -------
+    dat : Data
+        a copy of the resulting data divided into blocks.
+
+    Raises
+    ------
+    AssertionError
+
+        * if ``dat`` has not ``.fs`` or ``.markers`` attribute
+
+    Examples
+    --------
+
+    Offline Experiment
+
+    >>> # Define number of blocks
+    >>> nblocks = 5
+    >>> # Segment data into 5 blocks with 2s long intervals:
+    >>> blocks = segment_dat_into blocks(cnt, nblocks, 2000)
+
+
+    """
+    assert hasattr(dat, 'fs')
+    assert hasattr(dat, 'markers')
+
+    # the expected length of each cnt in the resulted epo
+    ival_nsamples = ival_len/1000 * dat.fs
+    total_len = dat.markers[-1][0] - dat.markers[0][0]
+    block_len = total_len//nblocks
+    nivals = int(block_len//ival_len)
+
+    block_offsets = np.arange(dat.markers[0][0], dat.markers[-1][0]-block_len, step=block_len)// (1000/dat.fs)
+    masks_relative = [np.arange(i*ival_nsamples,(i+1)*ival_nsamples) for i in range(nivals)]
+    masks_absolute = np.tile(masks_relative,[nblocks,1,1]) + np.reshape(block_offsets,newshape=(nblocks,1,1))
+
+    class_names = ['block ' +str(i+1) for i in range(nblocks)]
+
+    if len(masks_absolute) == 0:
+        data = np.array([])
+    else:
+        # np.take inserts a new dimension at `axis`...
+        data = dat.data.take(masks_absolute.astype('int'), axis=timeaxis)
+        data = np.reshape(data, newshape=(nblocks*nivals,ival_nsamples, -1))
+        # we want that new dimension at axis 0 so we have to swap it.
+        # before that we have to convert the netagive axis indices to
+        # their equivalent positive one, otherwise swapaxis will be one
+        # off.
+        if timeaxis < 0:
+            timeaxis = dat.data.ndim + timeaxis
+        data = data.swapaxes(0, timeaxis)
+
+    axes = dat.axes[:]
+    time = np.linspace(0, ival_len, ival_nsamples, endpoint=False)
+    axes[timeaxis] = time
+    classes = np.repeat(np.arange(nblocks),nivals)
+    axes.insert(0, classes)
+    names = dat.names[:]
+    names.insert(0, 'class')
+    units = dat.units[:]
+    units.insert(0, '#')
+    return dat.copy(data=data, axes=axes, names=names, units=units, class_names=class_names)
+
 
 def append(dat, dat2, axis=0, extra=None):
     """Append ``dat2`` to ``dat``.
@@ -1572,6 +1662,81 @@ def spectrum(dat, timeaxis=-2):
     units[timeaxis] = 'dl'
     # TODO: units in original unit or dimensionles?)
     spm = dat.copy(data=amps, axes=axes, names=names, units=units)
+    delattr(spm, 'fs')
+    return spm
+
+def spectrum_welch(dat, nperseg=None, scaling='spectrum', timeaxis=-2, chanaxis=-1):
+    """Calculate the spectrum of a data object.
+
+    This method estimates the power spectrum of the data along the
+    timeaxis using scipys welch() method and returns a new `Data` object
+    which is transformed into the frequency domain. The values are the
+    amplitudes of of the respective frequencies as specified by the
+    scaling method (default is 'spectrum').
+
+    Parameters
+    ----------
+    dat : Data
+        Data object with `.fs` attribute
+    nperseg : int, optional
+        segment length for scipy.signal.welch, defaults to dat.data.shape[timeaxis]//2
+    scaling : string, optional
+        scaling method for scipy.signal.welch, defaults to 'spectrum'
+    timeaxis : int, optional
+        axis to perform the fft along
+    chanaxis : int, optional
+        index of the channel axis
+
+    Returns
+    -------
+    dat : Data
+        Data object with the timeaxis transformed into the frequency
+        domain. The values of the spectrum are the amplitudes of the
+        respective frequencies as specified by the scaling method.
+
+    Examples
+    --------
+    >>> # dat can be continuous or epoched
+    >>> dat.axes
+    ['time', 'channel']
+    >>> spm = spectrum_welch(dat)
+    >>> spm.axes
+    ['frequency', 'channel']
+
+    Raises
+    ------
+    AssertionError
+        if the ``dat`` parameter has no ``.fs`` attribute
+
+    See Also
+    --------
+    spectrum, spectrogram, stft
+
+    """
+    # oh look at that! a dumb idea just found a friend.
+    assert hasattr(dat, 'fs')
+    # number of samples of our data
+    length = dat.data.shape[timeaxis]
+
+    if nperseg is None:
+        nperseg = length//2
+
+    def welch1D(signal, **kwargs):
+        freqs, Pxx = sp.signal.welch(signal, **kwargs)
+        return Pxx
+    #welch_args = {'fs':dat.fs,'nperseg':length/2, 'scaling':'spectrum'}
+    data = np.apply_along_axis(welch1D,timeaxis,dat.data, fs=dat.fs, nperseg=nperseg, scaling=scaling)
+    # run again on dummy data to get freqs
+    freqs, _ = sp.signal.welch(np.zeros(length), fs=dat.fs, nperseg=nperseg, scaling=scaling)
+
+    axes = dat.axes[:]
+    axes[timeaxis] = freqs
+    names = dat.names[:]
+    names[timeaxis] = 'frequency'
+    units = dat.units[:]
+    units[timeaxis] = 'Hz'
+
+    spm = dat.copy(data=data, axes=axes, names=names, units=units)
     delattr(spm, 'fs')
     return spm
 
