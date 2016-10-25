@@ -235,6 +235,7 @@ def plot_timeinterval(data, r_square=None, highlights=None, hcolors=None,
 
     plt.grid(True)
 
+
     if r_square is None:
         return ax0
     else:
