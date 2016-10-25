@@ -228,6 +228,7 @@ def plot_timeinterval(data, r_square=None, highlights=None, hcolors=None,
     ax0 = _subplot_timeinterval(dcopy, position=pos_ti, epoch=-1, highlights=highlights,
                                 hcolors=hcolors, legend=legend)
     ax0.xaxis.labelpad = 0
+
     if r_square is not None:
         ax1 = _subplot_r_square(r_square, position=pos_r2)
         ax0.tick_params(axis='x', direction='in', pad=30 * pos_ti[3])
@@ -749,7 +750,7 @@ def _subplot_timeinterval(data, position, epoch, highlights=None, hcolors=None,
     # labeling of channels
     if legend:
         if channel is None:
-            ax.legend(data.axes[len(data.axes) - 1])
+            ax.legend(data.axes[len(data.axes) - 1], loc='upper left', bbox_to_anchor=(1.1, 1), ncol=3)
         else:
             ax.legend([data.axes[len(data.axes) - 1][channel]])
 
